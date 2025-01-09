@@ -45,14 +45,14 @@ export const questions = [
   {
     id: 8,
     question:
-      "Will AI cause mass unemployment... by 2030 ? (>25% unemployement)",
-    answer: 20
+      "Will AI NOT cause mass unemployment... by 2030 ? (<25% unemployement)",
+    answer: 80
   },
   {
     id: 9,
     question:
-      "Before 2032, will we see an event precipitated by AI malfunction that causes at least 100 deaths or $1B in economic damage?",
-    answer: 80
+      "Before 2032, will AI NOT cause at least 100 deaths or $1B in economic damage?",
+    answer: 20
   },
   // Add more questions
 ];
