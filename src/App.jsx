@@ -285,34 +285,40 @@ const Admin = () => {
     });
   };
 
-  const showResults = async () => {
-    const currentQuestionData = questions[currentQuestion - 1];
-    const updatedStudents = students.map((student) => {
-      const prediction = Number(student.prediction) || 0;
-      // Calculate score as actual minus prediction (maintains sign)
-      // If actual=75% and prediction=80%, score = 75-80 = -5
-      // If actual=75% and prediction=70%, score = 75-70 = +5
-      const currentScore = currentQuestionData.answer - prediction;
-      return {
-        ...student,
-        currentScore,
-        totalScore: (student.totalScore || 0) + currentScore,
-      };
-    });
+  // In the showResults function within Admin component, modify to store prediction differences:
+const showResults = async () => {
+  const currentQuestionData = questions[currentQuestion - 1];
+  const updatedStudents = students.map((student) => {
+    const prediction = Number(student.prediction) || 0;
+    const currentScore = Math.abs(currentQuestionData.answer - prediction);
+    const predictionDiff = prediction - currentQuestionData.answer; // Calculate difference
+    
+    // Get existing differences array or initialize new one
+    const existingDiffs = student.predictionDiffs || [];
+    const newDiffs = [...existingDiffs, predictionDiff];
+    
+    return {
+      ...student,
+      currentScore,
+      totalScore: (student.totalScore || 0) + currentScore,
+      predictionDiffs: newDiffs // Store the differences array
+    };
+  });
 
-    await Promise.all(
-      updatedStudents.map((student) =>
-        updateDoc(doc(db, 'students', student.id), {
-          currentScore: student.currentScore,
-          totalScore: student.totalScore,
-        })
-      )
-    );
+  await Promise.all(
+    updatedStudents.map((student) =>
+      updateDoc(doc(db, 'students', student.id), {
+        currentScore: student.currentScore,
+        totalScore: student.totalScore,
+        predictionDiffs: student.predictionDiffs
+      })
+    )
+  );
 
-    await updateDoc(doc(db, 'gameStates', 'current'), {
-      phase: 'results',
-    });
-  };
+  await updateDoc(doc(db, 'gameStates', 'current'), {
+    phase: 'results',
+  });
+};
 
   const nextQuestion = async () => {
     if (currentQuestion < questions.length) {
@@ -352,7 +358,7 @@ const Admin = () => {
       }
       return Math.abs(a.totalScore || 0) - Math.abs(b.totalScore || 0);
     });
-
+  
     return (
       <div className="overflow-x-auto">
         <table className="min-w-full">
@@ -361,7 +367,10 @@ const Admin = () => {
               <th className="px-4 py-2">Name</th>
               <th className="px-4 py-2">Score</th>
               {(gamePhase === 'results' || gamePhase === 'final') && (
-                <th className="px-4 py-2">Total Score</th>
+                <>
+                  <th className="px-4 py-2">Total Score</th>
+                  <th className="px-4 py-2">All Predictions</th>
+                </>
               )}
             </tr>
           </thead>
@@ -378,9 +387,21 @@ const Admin = () => {
                     : student.totalScore || 0}
                 </td>
                 {(gamePhase === 'results' || gamePhase === 'final') && (
-                  <td className="border px-4 py-2">
-                    {student.totalScore || 0}
-                  </td>
+                  <>
+                    <td className="border px-4 py-2">
+                      {student.totalScore || 0}
+                    </td>
+                    <td className="border px-4 py-2">
+                      {student.predictionDiffs ? 
+                        student.predictionDiffs
+                          .sort((a, b) => a - b) // Sort from most negative to most positive
+                          .map(diff => (
+                            diff > 0 ? `+${diff.toFixed(1)}%` : `${diff.toFixed(1)}%`
+                          ))
+                          .join(', ')
+                        : ''}
+                    </td>
+                  </>
                 )}
               </tr>
             ))}
