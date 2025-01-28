@@ -395,10 +395,27 @@ const showResults = async () => {
                       {student.predictionDiffs ? 
                         student.predictionDiffs
                           .sort((a, b) => a - b) // Sort from most negative to most positive
-                          .map(diff => (
-                            diff > 0 ? `+${diff.toFixed(1)}%` : `${diff.toFixed(1)}%`
-                          ))
-                          .join(', ')
+                          .map(diff => {
+                            // Calculate color based on difference
+                            let color;
+                            if (diff < -10) color = 'rgb(220, 38, 38)'; // Strong red
+                            else if (diff < -5) color = 'rgb(239, 68, 68)'; // Medium red
+                            else if (diff < 0) color = 'rgb(252, 165, 165)'; // Light red
+                            else if (diff === 0) color = 'rgb(0, 0, 0)'; // Black
+                            else if (diff <= 5) color = 'rgb(134, 239, 172)'; // Light green
+                            else if (diff <= 10) color = 'rgb(34, 197, 94)'; // Medium green
+                            else color = 'rgb(22, 163, 74)'; // Strong green
+  
+                            return (
+                              <span 
+                                key={diff} 
+                                className="mx-1" 
+                                style={{ color }}
+                              >
+                                {diff > 0 ? `+${Math.round(diff)}%` : `${Math.round(diff)}%`}
+                              </span>
+                            );
+                          })
                         : ''}
                     </td>
                   </>
