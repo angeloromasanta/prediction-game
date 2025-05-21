@@ -12,17 +12,20 @@ import {
   doc,
   setDoc,
   onSnapshot,
+  getDoc
 } from 'firebase/firestore';
 import { questions } from './questions';
 
 // Initialize/Reset Game State
 const initializeGameState = async () => {
   try {
+    // Ensure the 'current' document exists and set initial phase
     await setDoc(doc(db, 'gameStates', 'current'), {
       phase: 'registration',
       currentQuestion: 1,
     });
 
+    // Clear all existing student data
     const studentsSnapshot = await getDocs(collection(db, 'students'));
     const deletePromises = studentsSnapshot.docs.map((doc) =>
       deleteDoc(doc.ref)
@@ -56,11 +59,14 @@ const Student = () => {
         );
 
         if (studentDoc.empty) {
-          // Invalid or old student ID, clear it
+          // Invalid or old student ID (e.g., admin reset), clear it
           localStorage.removeItem('studentId');
           setStudentId(null);
         } else {
           setStudentId(savedId);
+          // Fetch initial student data immediately
+          setStudentData(studentDoc.docs[0].data());
+          setSubmitted(studentDoc.docs[0].data().submitted || false);
         }
       }
     };
@@ -68,41 +74,50 @@ const Student = () => {
   }, []);
 
   useEffect(() => {
-    let unsubscribe = () => {};
-    let gameStateUnsubscribe = () => {};
+    let unsubscribeStudent = () => {};
+    let unsubscribeGameState = () => {};
 
     if (studentId) {
       // Set up real-time listener for student data
-      unsubscribe = onSnapshot(doc(db, 'students', studentId), (doc) => {
-        if (doc.exists()) {
-          setStudentData(doc.data());
-          setSubmitted(doc.data().submitted || false);
+      unsubscribeStudent = onSnapshot(doc(db, 'students', studentId), (docSnap) => {
+        if (docSnap.exists()) {
+          setStudentData(docSnap.data());
+          setSubmitted(docSnap.data().submitted || false);
         } else {
+          // Student document no longer exists (e.g., admin reset)
           localStorage.removeItem('studentId');
           setStudentId(null);
-          unsubscribe();
-          gameStateUnsubscribe();
+          setName(''); // Clear name to prompt re-registration
+          // Ensure we also clean up game state listener if student is gone
+          if (unsubscribeGameState) unsubscribeGameState();
+          if (unsubscribeStudent) unsubscribeStudent();
         }
       });
 
       // Set up real-time listener for game state
-      gameStateUnsubscribe = onSnapshot(
+      unsubscribeGameState = onSnapshot(
         doc(db, 'gameStates', 'current'),
-        (doc) => {
-          const gameState = doc.data();
+        (docSnap) => {
+          const gameState = docSnap.data();
           if (gameState) {
             setGamePhase(gameState.phase);
             if (gameState.phase === 'question') {
               setCurrentQuestion(questions[gameState.currentQuestion - 1]);
+              // Reset submitted status when a new question starts
               setSubmitted(false);
             }
           }
+        },
+        (error) => {
+          console.error("Error listening to game state:", error);
+          // Handle case where gameStates/current doc might be missing temporarily
+          // For now, it will just re-initialize in Admin if missing
         }
       );
 
       return () => {
-        unsubscribe();
-        gameStateUnsubscribe();
+        unsubscribeStudent();
+        unsubscribeGameState();
       };
     }
   }, [studentId]);
@@ -112,7 +127,7 @@ const Student = () => {
 
     try {
       const studentsSnapshot = await getDocs(
-        query(collection(db, 'students'), where('name', '==', name))
+        query(collection(db, 'students'), where('name', '==', name.trim())) // Trim name to avoid whitespace issues
       );
 
       if (!studentsSnapshot.empty) {
@@ -120,23 +135,33 @@ const Student = () => {
         return;
       }
 
-      const gameStateSnapshot = await getDocs(collection(db, 'gameStates'));
-      const gameState = gameStateSnapshot.docs[0]?.data();
+      const gameStateDoc = await getDocs(collection(db, 'gameStates')); // Get current game state
+      const gameState = gameStateDoc.docs[0]?.data();
 
       if (gameState && gameState.phase !== 'registration') {
-        alert('Registration is currently closed.');
+        alert('Registration is currently closed. Please wait for the next game.');
         return;
       }
 
       const docRef = await addDoc(collection(db, 'students'), {
-        name,
+        name: name.trim(), // Trim name before saving
         currentScore: 0,
         totalScore: 0,
         submitted: false,
+        answers: {}, // Store individual answers (e.g., answers: { "0": 50, "1": 75 })
+        predictionDiffs: [], // Store prediction differences for display
       });
 
       localStorage.setItem('studentId', docRef.id);
       setStudentId(docRef.id);
+      setStudentData({
+        name: name.trim(),
+        currentScore: 0,
+        totalScore: 0,
+        submitted: false,
+        answers: {},
+        predictionDiffs: [],
+      });
     } catch (error) {
       console.error('Error registering student:', error);
       alert('Error registering. Please try again.');
@@ -144,10 +169,23 @@ const Student = () => {
   };
 
   const handleSubmission = async () => {
+    if (!studentId || !currentQuestion) return;
+
     try {
-      await updateDoc(doc(db, 'students', studentId), {
-        prediction: Number(prediction),
+      // Fetch the latest student data to ensure we have up-to-date answers object
+      const studentDocRef = doc(db, 'students', studentId);
+      const studentDoc = await getDoc(studentDocRef);
+      const existingStudentData = studentDoc.data();
+
+      const updatedAnswers = {
+        ...existingStudentData.answers,
+        [currentQuestion.id]: Number(prediction), // Use question.id as key for answer
+      };
+
+      await updateDoc(studentDocRef, {
+        prediction: Number(prediction), // This `prediction` field seems redundant if `answers` is stored
         submitted: true,
+        answers: updatedAnswers,
       });
       setSubmitted(true);
     } catch (error) {
@@ -168,10 +206,11 @@ const Student = () => {
             placeholder="Enter your name"
             className="w-full p-2 border rounded"
             required
+            autoFocus
           />
           <button
             type="submit"
-            className="bg-blue-500 text-white px-4 py-2 rounded"
+            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition duration-200"
           >
             Submit
           </button>
@@ -190,9 +229,22 @@ const Student = () => {
         <p className="text-lg">
           Please wait for the admin to start the first question...
         </p>
-        <div className="mt-8 animate-pulse">
+        <div className="mt-8">
           <div className="w-16 h-16 border-t-4 border-blue-500 border-solid rounded-full animate-spin mx-auto"></div>
         </div>
+      </div>
+    );
+  }
+
+  if (gamePhase === 'final') {
+    return (
+      <div className="p-8 text-center">
+        <h2 className="text-2xl font-bold mb-4">Game Over!</h2>
+        <p className="text-lg">Thanks for playing, {studentData?.name}!</p>
+        <p className="text-xl font-semibold mt-4">Your total score: {studentData?.totalScore || 'N/A'}</p>
+        <p className="text-md text-gray-600 mt-2">
+          (Lower total score is better)
+        </p>
       </div>
     );
   }
@@ -201,32 +253,44 @@ const Student = () => {
     return (
       <div className="p-8 text-center">
         <p className="text-lg">Loading question...</p>
+        <div className="mt-8">
+          <div className="w-16 h-16 border-t-4 border-blue-500 border-solid rounded-full animate-spin mx-auto"></div>
+        </div>
       </div>
     );
   }
 
+  const questionIndex = questions.findIndex(q => q.id === currentQuestion.id);
+  const isQuestionAnswered = studentData?.answers?.[currentQuestion.id] !== undefined;
+
   return (
     <div className="p-8">
-      <h2 className="text-2xl font-bold mb-4">{currentQuestion.question}</h2>
+      <h2 className="text-2xl font-bold mb-4">Question {questionIndex + 1}: {currentQuestion.question}</h2>
       <input
         type="range"
         min="0"
         max="100"
-        value={prediction}
+        value={isQuestionAnswered ? studentData.answers[currentQuestion.id] : prediction}
         onChange={(e) => setPrediction(parseInt(e.target.value))}
-        className="w-full mb-4"
-        disabled={submitted}
+        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer range-lg dark:bg-gray-700"
+        disabled={submitted || gamePhase !== 'question'}
       />
-      <div className="text-center mb-4">Value: {prediction}%</div>
+      <div className="text-center mb-4 text-xl font-semibold">Value: {isQuestionAnswered ? studentData.answers[currentQuestion.id] : prediction}%</div>
       <button
         onClick={handleSubmission}
-        disabled={submitted}
-        className={`w-full py-2 rounded ${
-          submitted ? 'bg-green-500' : 'bg-blue-500'
-        } text-white`}
+        disabled={submitted || gamePhase !== 'question'}
+        className={`w-full py-3 rounded text-white font-bold text-lg ${
+          submitted || gamePhase !== 'question' ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'
+        } transition duration-200`}
       >
         {submitted ? 'Answer Submitted' : 'Submit Answer'}
       </button>
+      {gamePhase === 'results' && (
+        <div className="mt-4 p-4 bg-yellow-100 rounded text-center">
+          <p className="font-semibold">Results are being shown! Please wait for the next question.</p>
+          <p>Correct Answer: {currentQuestion.answer}%</p>
+        </div>
+      )}
     </div>
   );
 };
@@ -241,19 +305,25 @@ const Admin = () => {
     const setupGame = async () => {
       // Check if game state exists, if not initialize it
       const gameStateDoc = await getDocs(collection(db, 'gameStates'));
-      if (gameStateDoc.empty) {
+      if (gameStateDoc.empty || !gameStateDoc.docs[0].exists) { // Ensure document exists
         await initializeGameState();
       }
 
       // Set up real-time listeners
       const gameStateUnsubscribe = onSnapshot(
         doc(db, 'gameStates', 'current'),
-        (doc) => {
-          const gameData = doc.data();
+        (docSnap) => {
+          const gameData = docSnap.data();
           if (gameData) {
             setGamePhase(gameData.phase);
             setCurrentQuestion(gameData.currentQuestion);
+          } else {
+            // Game state document was deleted, re-initialize
+            initializeGameState();
           }
+        },
+        (error) => {
+          console.error("Error listening to game state:", error);
         }
       );
 
@@ -266,6 +336,9 @@ const Admin = () => {
               ...doc.data(),
             }))
           );
+        },
+        (error) => {
+          console.error("Error listening to students:", error);
         }
       );
 
@@ -279,46 +352,55 @@ const Admin = () => {
   }, []);
 
   const startQuestion = async () => {
+    // Before starting a new question, ensure all students' submitted status is false
+    // and answers are cleared for the next round if not already handled
+    await Promise.all(
+      students.map((student) =>
+        updateDoc(doc(db, 'students', student.id), {
+          submitted: false,
+          // We no longer need to clear answers, as they are stored per question ID
+        })
+      )
+    );
+
     await updateDoc(doc(db, 'gameStates', 'current'), {
       phase: 'question',
       currentQuestion,
     });
   };
 
-  // In the showResults function within Admin component, modify to store prediction differences:
-const showResults = async () => {
-  const currentQuestionData = questions[currentQuestion - 1];
-  const updatedStudents = students.map((student) => {
-    const prediction = Number(student.prediction) || 0;
-    const currentScore = Math.abs(currentQuestionData.answer - prediction);
-    const predictionDiff = prediction - currentQuestionData.answer; // Calculate difference
+  const showResults = async () => {
+    const currentQuestionData = questions[currentQuestion - 1];
     
-    // Get existing differences array or initialize new one
-    const existingDiffs = student.predictionDiffs || [];
-    const newDiffs = [...existingDiffs, predictionDiff];
-    
-    return {
-      ...student,
-      currentScore,
-      totalScore: (student.totalScore || 0) + currentScore,
-      predictionDiffs: newDiffs // Store the differences array
-    };
-  });
+    // Calculate and update scores for all students
+    const updatePromises = students.map(async (student) => {
+      const studentDocRef = doc(db, 'students', student.id);
+      const studentDoc = await getDoc(studentDocRef);
+      const existingStudentData = studentDoc.data();
 
-  await Promise.all(
-    updatedStudents.map((student) =>
-      updateDoc(doc(db, 'students', student.id), {
-        currentScore: student.currentScore,
-        totalScore: student.totalScore,
-        predictionDiffs: student.predictionDiffs
-      })
-    )
-  );
+      // Get the student's answer for the current question, default to 50 if not provided
+      const prediction = Number(existingStudentData.answers?.[currentQuestionData.id]) || 50; 
+      
+      const currentScore = Math.abs(currentQuestionData.answer - prediction);
+      const predictionDiff = prediction - currentQuestionData.answer; // Signed difference
 
-  await updateDoc(doc(db, 'gameStates', 'current'), {
-    phase: 'results',
-  });
-};
+      // Ensure predictionDiffs is an array and add the new diff
+      const existingDiffs = Array.isArray(existingStudentData.predictionDiffs) ? existingStudentData.predictionDiffs : [];
+      const newDiffs = [...existingDiffs, predictionDiff];
+      
+      return updateDoc(studentDocRef, {
+        currentScore: currentScore,
+        totalScore: (existingStudentData.totalScore || 0) + currentScore,
+        predictionDiffs: newDiffs // Store the differences array
+      });
+    });
+
+    await Promise.all(updatePromises);
+
+    await updateDoc(doc(db, 'gameStates', 'current'), {
+      phase: 'results',
+    });
+  };
 
   const nextQuestion = async () => {
     if (currentQuestion < questions.length) {
@@ -328,7 +410,7 @@ const showResults = async () => {
         currentQuestion: nextQuestionNum,
       });
 
-      // Reset student submissions
+      // Reset student submissions (already done in startQuestion, but good to ensure)
       await Promise.all(
         students.map((student) =>
           updateDoc(doc(db, 'students', student.id), {
@@ -344,59 +426,73 @@ const showResults = async () => {
   };
 
   const resetGame = async () => {
-    try {
-      await initializeGameState();
-    } catch (error) {
-      console.error('Error resetting game:', error);
+    if (window.confirm("Are you sure you want to reset the entire game? This will delete all student data and scores.")) {
+      try {
+        await initializeGameState();
+        console.log("Game reset initiated successfully.");
+      } catch (error) {
+        console.error('Error resetting game:', error);
+        alert('Failed to reset game. Check console for details.');
+      }
     }
   };
 
   const renderStudentList = () => {
+    // Sort students based on game phase
     const sortedStudents = [...students].sort((a, b) => {
-      if (gamePhase === 'results' || gamePhase === 'final') {
+      // For results phase, sort by current round's absolute score (lower is better)
+      if (gamePhase === 'results') {
         return Math.abs(a.currentScore || 0) - Math.abs(b.currentScore || 0);
+      } else {
+        // For 'registration', 'question', and 'final', sort by total absolute score (lower is better)
+        return Math.abs(a.totalScore || 0) - Math.abs(b.totalScore || 0);
       }
-      return Math.abs(a.totalScore || 0) - Math.abs(b.totalScore || 0);
     });
   
     return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full">
-          <thead>
+      <div className="overflow-x-auto border rounded-lg shadow-sm">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-2">Name</th>
-              <th className="px-4 py-2">Score</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Round Score</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Score</th>
               {(gamePhase === 'results' || gamePhase === 'final') && (
-                <>
-                  <th className="px-4 py-2">Total Score</th>
-                  <th className="px-4 py-2">All Predictions</th>
-                </>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">All Predictions (Diffs)</th>
               )}
             </tr>
           </thead>
-          <tbody>
-            {sortedStudents.map((student) => (
-              <tr
-                key={student.id}
-                className={student.submitted ? 'bg-green-100' : ''}
-              >
-                <td className="border px-4 py-2">{student.name}</td>
-                <td className="border px-4 py-2">
-                  {gamePhase === 'results' || gamePhase === 'final'
-                    ? student.currentScore || 0
-                    : student.totalScore || 0}
-                </td>
-                {(gamePhase === 'results' || gamePhase === 'final') && (
-                  <>
-                    <td className="border px-4 py-2">
-                      {student.totalScore || 0}
-                    </td>
-                    <td className="border px-4 py-2">
-                      {student.predictionDiffs ? 
+          <tbody className="bg-white divide-y divide-gray-200">
+            {sortedStudents.map((student) => {
+              const currentQuestionData = questions[currentQuestion - 1];
+              const studentPredictionForCurrentRound = student.answers?.[currentQuestionData?.id];
+
+              return (
+                <tr
+                  key={student.id}
+                  className={student.submitted ? 'bg-green-50' : (gamePhase === 'question' ? 'bg-yellow-50' : '')}
+                >
+                  <td className="px-4 py-3 whitespace-nowrap">{student.name}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {gamePhase === 'question' ? (
+                      student.submitted ? 'Submitted' : 'Waiting...'
+                    ) : (gamePhase === 'results' || gamePhase === 'final' ? (studentPredictionForCurrentRound !== undefined ? `Answered: ${studentPredictionForCurrentRound}%` : 'N/A') : '')}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-center">
+                    {gamePhase === 'results' || gamePhase === 'final'
+                      ? (student.currentScore || 0)
+                      : 'N/A'}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-center">
+                    {(student.totalScore || 0)}
+                  </td>
+                  {(gamePhase === 'results' || gamePhase === 'final') && (
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {student.predictionDiffs && Array.isArray(student.predictionDiffs) ? 
                         student.predictionDiffs
                           .sort((a, b) => a - b) // Sort from most negative to most positive
-                          .map(diff => {
-                            // Calculate color based on difference
+                          .map((diff, index) => {
                             let color;
                             if (diff < -10) color = 'rgb(220, 38, 38)'; // Strong red
                             else if (diff < -5) color = 'rgb(239, 68, 68)'; // Medium red
@@ -408,8 +504,8 @@ const showResults = async () => {
   
                             return (
                               <span 
-                                key={diff} 
-                                className="mx-1" 
+                                key={`${student.id}-${diff}-${index}`} // Unique key for each span
+                                className="inline-block mx-1" // Use inline-block for spacing
                                 style={{ color }}
                               >
                                 {diff > 0 ? `+${Math.round(diff)}%` : `${Math.round(diff)}%`}
@@ -418,78 +514,92 @@ const showResults = async () => {
                           })
                         : ''}
                     </td>
-                  </>
-                )}
-              </tr>
-            ))}
+                  )}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
+        {students.length === 0 && (
+          <p className="p-4 text-center text-gray-500">No students registered yet.</p>
+        )}
       </div>
     );
   };
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between mb-4">
-        <h1 className="text-2xl font-bold">Admin Panel</h1>
+    <div className="p-8 max-w-4xl mx-auto bg-white shadow-lg rounded-lg">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-extrabold text-gray-800">Admin Panel</h1>
         <button
           onClick={resetGame}
-          className="bg-red-500 text-white px-4 py-2 rounded"
+          className="bg-red-600 text-white px-5 py-2 rounded-md hover:bg-red-700 transition duration-200 shadow-md"
         >
           Reset Game
         </button>
       </div>
 
       {gamePhase === 'registration' && (
-        <div>
-          <h2 className="text-xl mb-4">Registered Students</h2>
+        <div className="bg-blue-50 p-6 rounded-lg mb-6">
+          <h2 className="text-xl font-semibold mb-4 text-blue-800">Registered Students</h2>
           {renderStudentList()}
           <button
             onClick={startQuestion}
-            className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
+            className="mt-6 w-full bg-blue-600 text-white px-5 py-3 rounded-md text-lg font-semibold hover:bg-blue-700 transition duration-200 shadow-md"
             disabled={students.length === 0}
           >
             Start Question {currentQuestion}
           </button>
+          {students.length === 0 && <p className="text-center text-gray-500 mt-2">Waiting for students to register...</p>}
         </div>
       )}
 
       {gamePhase === 'question' && (
-        <div>
-          <h2 className="text-xl mb-4">Current Question</h2>
-          <p className="mb-4">{questions[currentQuestion - 1].question}</p>
+        <div className="bg-purple-50 p-6 rounded-lg mb-6">
+          <h2 className="text-xl font-semibold mb-4 text-purple-800">Current Question ({currentQuestion}/{questions.length})</h2>
+          <p className="mb-4 text-lg font-medium">{questions[currentQuestion - 1].question}</p>
           {renderStudentList()}
           <button
             onClick={showResults}
-            className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
+            className="mt-6 w-full bg-purple-600 text-white px-5 py-3 rounded-md text-lg font-semibold hover:bg-purple-700 transition duration-200 shadow-md"
           >
-            Show Results
+            Show Results for Question {currentQuestion}
           </button>
         </div>
       )}
 
       {gamePhase === 'results' && (
-        <div>
-          <h2 className="text-xl mb-4">Results</h2>
-          <p className="mb-4">
-            Correct Answer: {questions[currentQuestion - 1].answer}%
-          </p>
+        <div className="bg-green-50 p-6 rounded-lg mb-6">
+          <h2 className="text-xl font-semibold mb-4 text-green-800">Results for Question {currentQuestion}</h2>
+          <p className="mb-4 text-lg font-medium">Correct Answer: {questions[currentQuestion - 1].answer}%</p>
           {renderStudentList()}
           <button
             onClick={nextQuestion}
-            className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
+            className="mt-6 w-full bg-green-600 text-white px-5 py-3 rounded-md text-lg font-semibold hover:bg-green-700 transition duration-200 shadow-md"
           >
             {currentQuestion < questions.length
-              ? 'Next Question'
+              ? `Next Question (${currentQuestion + 1}/${questions.length})`
               : 'Show Final Results'}
           </button>
         </div>
       )}
 
       {gamePhase === 'final' && (
-        <div>
-          <h2 className="text-xl mb-4">Final Results</h2>
+        <div className="bg-yellow-50 p-6 rounded-lg mb-6">
+          <h2 className="text-2xl font-extrabold mb-4 text-yellow-800 text-center">Final Results!</h2>
+          <p className="text-center text-lg mb-4 text-yellow-700">Congratulations to the winner!</p>
           {renderStudentList()}
+          <div className="mt-6 text-center">
+            {students.length > 0 && (
+              <p className="text-xl font-bold text-gray-800">
+                Winner: {students.reduce((prev, curr) => (
+                  Math.abs(prev.totalScore || 0) < Math.abs(curr.totalScore || 0) ? prev : curr
+                )).name} (Total Score: {students.reduce((prev, curr) => (
+                  Math.abs(prev.totalScore || 0) < Math.abs(curr.totalScore || 0) ? prev : curr
+                )).totalScore})
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

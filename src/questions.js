@@ -2,57 +2,67 @@ export const questions = [
   {
     id: 1,
     question:
-      "Will an AI solve any important mathematical conjecture before January 1st, 2030?",
-    answer: 80,
+      "Will someone born before 2001 live to be 150?",
+    answer: 28,
   },
   {
     id: 2,
     question:
-      "In 2028, will an AI be able to generate a full high-quality movie to a prompt?",
-    answer: 43,
+      "By 2035, will gene editing of human embryos for therapeutic purposes be officially approved by any country?",
+    answer: 60,
   },
   {
     id: 3,
     question:
-      "Will there be a song created by an AI system in the year-end top 100 Billboards chart by 2026?",
-    answer: 52,
+      "By 2030, will a senolytic (aging) therapy be approved for commercial sale by the US FDA?",
+    answer: 54,
   },
   {
     id: 4,
     question:
-      "Will a book written by a language model make the NY Times Best Seller list before 2030?",
-    answer: 65,
+      "By 2031, will the U.S. FDA approve stem cells for treatment of any medical condition before 2031?",
+    answer: 18,
   },
-
   {
     id: 5,
     question:
-      "Will a large language model beat a super grandmaster playing chess by 2028?",
-    answer: 69,
+      "By 2035, will gray hair be mostly reversible?",
+    answer: 41,
   },
   {
     id: 6,
     question:
-      "Will we get AGI before 2030?",
-    answer: 57
+      "By 2030, will FDA approve an AI developed cure for a previously incurable major illness.",
+    answer: 55,
   },
   {
     id: 7,
     question:
-      "Will there be a positive transition to a world with radically smarter-than-human artificial intelligence?",
-    answer: 51,
+      "By 2027, will oral semaglutide be approved for the treatment of obesity by the FDA or EMA?",
+    answer: 80,
   },
   {
     id: 8,
     question:
-      "Will AI NOT cause mass unemployment... by 2030 ? (<25% unemployement)",
-    answer: 80
+      "By 2035, will lab-grown complex vital organs be used successfully in humans?",
+    answer: 70,
   },
   {
     id: 9,
     question:
-      "Before 2032, will AI NOT cause at least 100 deaths or $1B in economic damage?",
-    answer: 20
+      "By 2040, will the woolly mammoth be de-extincted?",
+    answer: 68,
   },
-  // Add more questions
+  {
+    id: 10,
+    question:
+      "By 2032, will an FDA-approved therapeutic intervention demonstrate a statistically significant reversal of at least 10 years in biological age in humans?",
+    answer: 20,
+  },
+  {
+    id: 11,
+    question:
+      "By 2050, will there be a cure to aging?",
+    answer: 37,
+  },
 ];

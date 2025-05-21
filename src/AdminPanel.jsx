@@ -154,9 +154,9 @@ export default function AdminPanel() {
                 className={difference > 0 ? 'text-red-500' : 'text-green-500'}
               >
                 {difference > 0 ? '+' : ''}
-                {difference.toFixed(1)}%
+                {difference}%
               </span>
-              <span>Total: {cumulativeScore.toFixed(1)}</span>
+              <span>Total: {cumulativeScore}</span>
             </div>
           ))}
         </div>
@@ -172,7 +172,7 @@ export default function AdminPanel() {
             .map((student) => (
               <div key={student.id}>
                 {student.name} - Total Difference:{' '}
-                {student.cumulativeScore.toFixed(1)}
+                {student.cumulativeScore}
               </div>
             ))}
         </div>
