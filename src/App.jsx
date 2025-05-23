@@ -295,6 +295,83 @@ const Student = () => {
   );
 };
 
+// Helper function to render the histogram
+// You can place this function definition in your Admin.js file,
+// for example, above the Admin component definition, or as a nested helper.
+
+const renderResponseHistogram = (studentPredictions, correctAnswerValue) => {
+  if (!studentPredictions || studentPredictions.length === 0) {
+    return <p className="text-center text-gray-500 my-4">No student predictions available for this question to display histogram.</p>;
+  }
+
+  const binLabels = [
+    "0-9", "10-19", "20-29", "30-39", "40-49",
+    "50-59", "60-69", "70-79", "80-89", "90-100"
+  ];
+  // Initialize bins: an array of objects, each representing a bin
+  const bins = binLabels.map(label => ({
+    label: label,
+    count: 0,
+    isCorrectBin: false
+  }));
+
+  // Populate bin counts
+  studentPredictions.forEach(prediction => {
+    let binIndex;
+    if (typeof prediction !== 'number' || isNaN(prediction)) {
+        return; // Skip non-numeric or NaN predictions
+    }
+    if (prediction === 100) {
+      binIndex = 9; // Prediction of 100 goes into the last bin (90-100)
+    } else if (prediction >= 0 && prediction < 100) {
+      binIndex = Math.floor(prediction / 10);
+    } else {
+      return; // Skip out-of-range predictions (e.g., < 0)
+    }
+    if (bins[binIndex]) { // Ensure binIndex is valid
+        bins[binIndex].count++;
+    }
+  });
+
+  // Identify the correct bin
+  let correctBinIndex;
+  if (correctAnswerValue === 100) {
+    correctBinIndex = 9;
+  } else if (correctAnswerValue >= 0 && correctAnswerValue < 100) {
+    correctBinIndex = Math.floor(correctAnswerValue / 10);
+  }
+
+  if (correctBinIndex !== undefined && bins[correctBinIndex]) {
+    bins[correctBinIndex].isCorrectBin = true;
+  }
+
+  const maxCount = Math.max(...bins.map(b => b.count), 1); // Max count for scaling bar height, at least 1 to avoid division by zero
+
+  return (
+    <div className="mt-8 p-4 border rounded-lg bg-gray-50 shadow">
+      <h3 className="text-lg font-semibold mb-4 text-center text-gray-700">Response Distribution for Question { /* Consider passing question number if needed */}</h3>
+      <div className="flex justify-between h-48 space-x-1 px-2">  {/* Increased height for bars */}
+        {bins.map((bin, index) => (
+          <div key={index} className="flex flex-col justify-end items-center flex-1 min-w-0 text-xs text-gray-600"> {/* Added justify-end */}
+          <div
+            className={`w-full rounded-t ${bin.isCorrectBin ? 'bg-green-600' : 'bg-blue-500'} text-white flex items-center justify-center text-sm font-bold transition-all duration-300 ease-in-out`}
+            style={{ height: `${(bin.count / maxCount) * 100}%`, minHeight: '5px' }} // This height is now a % of the column's full height (h-48)
+            title={`Range: ${bin.label}\nCount: ${bin.count}`}
+          >
+            {bin.count > 0 ? bin.count : ''}
+          </div>
+          <span className="mt-1 whitespace-nowrap">{bin.label}</span>
+        </div>
+        ))}
+      </div>
+      {correctBinIndex !== undefined && bins[correctBinIndex] && (
+        <p className="text-xs text-center mt-3 text-gray-600">
+          Correct Answer ({correctAnswerValue}%) falls in the <span className="font-bold" style={{color: 'rgb(22, 163, 74)'}}>green bin ({bins[correctBinIndex].label})</span>.
+        </p>
+      )}
+    </div>
+  );
+};
 // Admin Component
 const Admin = () => {
   const [gamePhase, setGamePhase] = useState('registration');
@@ -568,11 +645,29 @@ const Admin = () => {
         </div>
       )}
 
-      {gamePhase === 'results' && (
+{gamePhase === 'results' && (
         <div className="bg-green-50 p-6 rounded-lg mb-6">
           <h2 className="text-xl font-semibold mb-4 text-green-800">Results for Question {currentQuestion}</h2>
           <p className="mb-4 text-lg font-medium">Correct Answer: {questions[currentQuestion - 1].answer}%</p>
           {renderStudentList()}
+
+          {/* === ADD THIS SECTION FOR THE HISTOGRAM === */}
+          {(() => {
+            // Ensure renderResponseHistogram is accessible in this scope
+            // (defined above the Admin component, or as a nested helper)
+
+            const currentQuestionData = questions[currentQuestion - 1];
+            if (!currentQuestionData) return null; // Should not happen if phase is 'results'
+
+            // Extract predictions for the current question from all students
+            const predictionsForCurrentQuestion = students
+              .map(student => student.answers?.[currentQuestionData.id])
+              .filter(pred => typeof pred === 'number' && !isNaN(pred)); // Filter for valid numbers
+
+            return renderResponseHistogram(predictionsForCurrentQuestion, currentQuestionData.answer);
+          })()}
+          {/* === END HISTOGRAM SECTION === */}
+
           <button
             onClick={nextQuestion}
             className="mt-6 w-full bg-green-600 text-white px-5 py-3 rounded-md text-lg font-semibold hover:bg-green-700 transition duration-200 shadow-md"
