@@ -3,33 +3,33 @@ export const questions = [
     id: 1,
     question:
       "In 2028, will an AI be able to generate a full high-quality movie to a prompt?",
-    answer: 37,
+    answer: 31,
   },
   {
     id: 2,
     question:
-      "Will there be a song created by an AI system in the year-end top 100 Billboards chart by 2026?",
-    answer: 63,
+      "In 2028, will at least 1/1000 of Americans be talking weekly to an AI romantic partner?",
+    answer: 86,
   },
   {
     id: 3,
     question:
-      "Will a book written by a language model make the NY Times Best Seller list before 2030?",
-    answer: 60,
-  },
-
-    {
-    id: 4,
-    question:
-      "Will we get AGI before 2030?",
-    answer: 52
+      "By 2030, will a reliable household robot be available?",
+    answer: 50,
   },
   {
+    id: 4,
+    question:
+      "Will any song on Billboard Hot 100 before 2026 be composed by AI?",
+    answer: 24,
+  },
+    {
     id: 5,
     question:
-      "Will there be a positive transition to a world with radically smarter-than-human artificial intelligence?",
-    answer: 53,
+      "Before 2030, will AI cause US unemployment to exceed 10%?",
+    answer: 19
   },
+
   {
     id: 6,
     question:
