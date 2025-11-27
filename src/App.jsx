@@ -377,6 +377,11 @@ const Admin = () => {
   const [gamePhase, setGamePhase] = useState('registration');
   const [currentQuestion, setCurrentQuestion] = useState(1);
   const [students, setStudents] = useState([]);
+  const appBasePath = import.meta.env.BASE_URL || '/';
+  const baseLink = typeof window === 'undefined' ? '' : new URL(appBasePath, window.location.origin).href;
+  const qrCodeUrl = baseLink
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(baseLink)}`
+    : '';
 
   useEffect(() => {
     const setupGame = async () => {
@@ -614,6 +619,21 @@ const Admin = () => {
         >
           Reset Game
         </button>
+      </div>
+
+      <div className="bg-gray-50 p-6 rounded-lg mb-6 flex flex-col md:flex-row md:items-center gap-6">
+        <div className="flex-1 text-center md:text-left">
+          <p className="text-sm uppercase font-semibold text-gray-500 tracking-wide">Student Link</p>
+          <p className="text-2xl font-bold text-gray-800 break-all">{baseLink}</p>
+          <p className="text-gray-600 mt-2">Have students scan the QR code or visit the link above to join.</p>
+        </div>
+        {qrCodeUrl && (
+          <img
+            src={qrCodeUrl}
+            alt="QR code to student link"
+            className="w-40 h-40 md:w-48 md:h-48 self-center"
+          />
+        )}
       </div>
 
       {gamePhase === 'registration' && (
