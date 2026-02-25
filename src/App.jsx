@@ -47,6 +47,7 @@ const Student = () => {
   const [gamePhase, setGamePhase] = useState('registration');
   const [studentId, setStudentId] = useState(null);
   const [studentData, setStudentData] = useState(null);
+  const [registering, setRegistering] = useState(false);
 
   // Check for valid student session on component mount
   useEffect(() => {
@@ -124,6 +125,8 @@ const Student = () => {
 
   const handleRegistration = async (e) => {
     e.preventDefault();
+    if (registering) return;
+    setRegistering(true);
 
     try {
       const studentsSnapshot = await getDocs(
@@ -132,6 +135,7 @@ const Student = () => {
 
       if (!studentsSnapshot.empty) {
         alert('This name is already taken. Please choose a different name.');
+        setRegistering(false);
         return;
       }
 
@@ -140,6 +144,7 @@ const Student = () => {
 
       if (gameState && gameState.phase !== 'registration') {
         alert('Registration is currently closed. Please wait for the next game.');
+        setRegistering(false);
         return;
       }
 
@@ -165,6 +170,7 @@ const Student = () => {
     } catch (error) {
       console.error('Error registering student:', error);
       alert('Error registering. Please try again.');
+      setRegistering(false);
     }
   };
 
@@ -210,9 +216,10 @@ const Student = () => {
           />
           <button
             type="submit"
-            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition duration-200"
+            disabled={registering}
+            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Submit
+            {registering ? 'Registering...' : 'Submit'}
           </button>
         </form>
       </div>
@@ -384,6 +391,9 @@ const Admin = () => {
     : '';
 
   useEffect(() => {
+    let gameStateUnsubscribe = () => {};
+    let studentsUnsubscribe = () => {};
+
     const setupGame = async () => {
       // Check if game state exists, if not initialize it
       const gameStateDoc = await getDocs(collection(db, 'gameStates'));
@@ -392,7 +402,7 @@ const Admin = () => {
       }
 
       // Set up real-time listeners
-      const gameStateUnsubscribe = onSnapshot(
+      gameStateUnsubscribe = onSnapshot(
         doc(db, 'gameStates', 'current'),
         (docSnap) => {
           const gameData = docSnap.data();
@@ -409,7 +419,7 @@ const Admin = () => {
         }
       );
 
-      const studentsUnsubscribe = onSnapshot(
+      studentsUnsubscribe = onSnapshot(
         collection(db, 'students'),
         (snapshot) => {
           setStudents(
@@ -423,14 +433,14 @@ const Admin = () => {
           console.error("Error listening to students:", error);
         }
       );
-
-      return () => {
-        gameStateUnsubscribe();
-        studentsUnsubscribe();
-      };
     };
 
     setupGame();
+
+    return () => {
+      gameStateUnsubscribe();
+      studentsUnsubscribe();
+    };
   }, []);
 
   const startQuestion = async () => {
@@ -520,8 +530,18 @@ const Admin = () => {
   };
 
   const renderStudentList = () => {
+    // Deduplicate by name, keeping the entry with the highest totalScore
+    const seen = new Map();
+    for (const student of students) {
+      const key = student.name?.trim().toLowerCase();
+      if (!seen.has(key) || Math.abs(student.totalScore || 0) > Math.abs(seen.get(key).totalScore || 0)) {
+        seen.set(key, student);
+      }
+    }
+    const dedupedStudents = [...seen.values()];
+
     // Sort students based on game phase
-    const sortedStudents = [...students].sort((a, b) => {
+    const sortedStudents = dedupedStudents.sort((a, b) => {
       // For results phase, sort by current round's absolute score (lower is better)
       if (gamePhase === 'results') {
         return Math.abs(a.currentScore || 0) - Math.abs(b.currentScore || 0);
@@ -602,7 +622,7 @@ const Admin = () => {
             })}
           </tbody>
         </table>
-        {students.length === 0 && (
+        {dedupedStudents.length === 0 && (
           <p className="p-4 text-center text-gray-500">No students registered yet.</p>
         )}
       </div>
