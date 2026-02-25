@@ -470,20 +470,21 @@ const Admin = () => {
       const studentDoc = await getDoc(studentDocRef);
       const existingStudentData = studentDoc.data();
 
-      // Get the student's answer for the current question, default to 50 if not provided
-      const prediction = Number(existingStudentData.answers?.[currentQuestionData.id]) || 50; 
-      
-      const currentScore = Math.abs(currentQuestionData.answer - prediction);
-      const predictionDiff = prediction - currentQuestionData.answer; // Signed difference
+      // Skip students who didn't answer this question
+      const rawAnswer = existingStudentData.answers?.[currentQuestionData.id];
+      if (rawAnswer === undefined) return;
 
-      // Ensure predictionDiffs is an array and add the new diff
+      const prediction = Number(rawAnswer);
+      const currentScore = Math.abs(currentQuestionData.answer - prediction);
+      const predictionDiff = prediction - currentQuestionData.answer;
+
       const existingDiffs = Array.isArray(existingStudentData.predictionDiffs) ? existingStudentData.predictionDiffs : [];
       const newDiffs = [...existingDiffs, predictionDiff];
-      
+
       return updateDoc(studentDocRef, {
         currentScore: currentScore,
         totalScore: (existingStudentData.totalScore || 0) + currentScore,
-        predictionDiffs: newDiffs // Store the differences array
+        predictionDiffs: newDiffs,
       });
     });
 
@@ -530,15 +531,10 @@ const Admin = () => {
   };
 
   const renderStudentList = () => {
-    // Deduplicate by name, keeping the entry with the highest totalScore
-    const seen = new Map();
-    for (const student of students) {
-      const key = student.name?.trim().toLowerCase();
-      if (!seen.has(key) || Math.abs(student.totalScore || 0) > Math.abs(seen.get(key).totalScore || 0)) {
-        seen.set(key, student);
-      }
-    }
-    const dedupedStudents = [...seen.values()];
+    // In results/final phase, filter out ghost accounts that never submitted any answer
+    const dedupedStudents = (gamePhase === 'results' || gamePhase === 'final')
+      ? students.filter(s => Object.keys(s.answers || {}).length > 0)
+      : students;
 
     // Sort students based on game phase
     const sortedStudents = dedupedStudents.sort((a, b) => {
